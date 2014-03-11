@@ -28,7 +28,7 @@
 #define GL_GLEXT_PROTOTYPES
 
 #include <gbm.h>
-#include "gl_wrap.h"
+#include <GL/gl.h>
 #include <GL/glext.h>
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
