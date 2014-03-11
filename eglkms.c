@@ -99,15 +99,17 @@ static void
 render_stuff(int width, int height)
 {
    GLfloat view_rotx = 0.0, view_roty = 0.0, view_rotz = 0.0;
-   static const GLfloat verts[3][2] = {
+   static const GLfloat verts[4][2] = {
       { -1, -1 },
       {  1, -1 },
-      {  0,  1 }
+      { -1,  1 },
+      {  1,  1 }
    };
-   static const GLfloat colors[3][3] = {
-      { 1, 0, 0 },
-      { 0, 1, 0 },
-      { 0, 0, 1 }
+   static const GLfloat texcoord[4][2] = {
+      { 0, 0 },
+      { 1, 0 },
+      { 0, 1 },
+      { 1, 1 },
    };
    GLfloat ar = (GLfloat) width / (GLfloat) height;
 
@@ -119,7 +121,7 @@ render_stuff(int width, int height)
 
    glMatrixMode(GL_MODELVIEW);
    glLoadIdentity();
-   glTranslatef(0.0, 0.0, -10.0);
+   glTranslatef(0.0, 0.0, -5.1);
 
    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
    glClearColor(0.4, 0.4, 0.4, 0.0);
@@ -130,14 +132,16 @@ render_stuff(int width, int height)
    glRotatef(view_rotz, 0, 0, 1);
 
    glVertexPointer(2, GL_FLOAT, 0, verts);
-   glColorPointer(3, GL_FLOAT, 0, colors);
+   glTexCoordPointer(2, GL_FLOAT, 0, texcoord);
    glEnableClientState(GL_VERTEX_ARRAY);
-   glEnableClientState(GL_COLOR_ARRAY);
+   glEnableClientState(GL_TEXTURE_COORD_ARRAY);
 
-   glDrawArrays(GL_TRIANGLES, 0, 3);
+   glEnable(GL_TEXTURE_2D);
+
+   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
    glDisableClientState(GL_VERTEX_ARRAY);
-   glDisableClientState(GL_COLOR_ARRAY);
+   glDisableClientState(GL_TEXTURE_COORD_ARRAY);
 
    glPopMatrix();
 
@@ -232,6 +236,46 @@ int main(int argc, char *argv[])
       ret = -1;
       goto destroy_context;
    }
+
+   /* create texture */
+   struct gbm_bo *tex_bo;
+   uint32_t *tex_map;
+
+   tex_bo = gbm_bo_create(gbm, 32, 32, GBM_BO_FORMAT_ARGB8888,
+			  GBM_BO_USE_CPU_WRITE);
+   if (!tex_bo)
+      return -1;
+
+   tex_map = gbm_bo_map(tex_bo);
+
+   int x, y;
+   for (y = 0; y < 32; y++) {
+      for (x = 0; x < 32; x++)
+	  tex_map[x] = ((int) (0xff * (x / 32.0))) << 16 |
+	               ((int) (0xff * (y / 32.0))) <<  8 |
+                       0xff000000;
+
+      tex_map += gbm_bo_get_stride(tex_bo) / sizeof(tex_map[0]);
+   }
+
+   gbm_bo_unmap(tex_bo);
+
+   EGLImageKHR egl_img;
+   egl_img = eglCreateImageKHR(dpy, EGL_NO_CONTEXT,
+			       EGL_NATIVE_PIXMAP_KHR, tex_bo, NULL);
+   if (!egl_img) {
+      fprintf(stderr, "Failed to create image from gbm bo\n");
+      return -1;
+   }
+
+
+   GLuint tex;
+   glGenTextures(1, &tex);
+   glBindTexture(GL_TEXTURE_2D, tex);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+   glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_img);
 
    render_stuff(kms.mode.hdisplay, kms.mode.vdisplay);
 
