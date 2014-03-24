@@ -161,6 +161,38 @@ static const EGLint attribs[] = {
    EGL_NONE
 };
 
+static int
+do_cpu_rendering(struct gbm_bo *bo, struct gbm_device *gbm,
+                 int width, int height, int stride)
+{
+   uint32_t *tex_map;
+   int x, y;
+   int fd;
+   struct gbm_bo *tex_bo;
+
+   gbm_bo_export(bo, GBM_BO_IMPORT_DMA_BUF, (void **) &fd, GBM_BO_USE_MAP);
+
+   tex_bo = gbm_bo_import2(gbm, GBM_BO_IMPORT_DMA_BUF, (void *) &fd,
+                           width, height, stride, GBM_FORMAT_XRGB8888, GBM_BO_USE_MAP);
+   if (!tex_bo)
+      return -1;
+
+   tex_map = gbm_bo_map(tex_bo);
+
+   for (y = 0; y < 32; y++) {
+      for (x = 0; x < 32; x++)
+	  tex_map[x] = ((int) (0xff * (x / 32.0))) << 16 |
+	               ((int) (0xff * (y / 32.0))) <<  8 |
+                       0xff000000;
+
+      tex_map += gbm_bo_get_stride(tex_bo) / sizeof(tex_map[0]);
+   }
+
+   gbm_bo_unmap(tex_bo);
+
+   return 0;
+}
+
 int main(int argc, char *argv[])
 {
    EGLDisplay dpy;
@@ -239,26 +271,14 @@ int main(int argc, char *argv[])
 
    /* create texture */
    struct gbm_bo *tex_bo;
-   uint32_t *tex_map;
 
    tex_bo = gbm_bo_create(gbm, 32, 32, GBM_BO_FORMAT_ARGB8888,
-			  GBM_BO_USE_CPU_WRITE);
+			  GBM_BO_USE_MAP);
    if (!tex_bo)
       return -1;
 
-   tex_map = gbm_bo_map(tex_bo);
-
-   int x, y;
-   for (y = 0; y < 32; y++) {
-      for (x = 0; x < 32; x++)
-	  tex_map[x] = ((int) (0xff * (x / 32.0))) << 16 |
-	               ((int) (0xff * (y / 32.0))) <<  8 |
-                       0xff000000;
-
-      tex_map += gbm_bo_get_stride(tex_bo) / sizeof(tex_map[0]);
-   }
-
-   gbm_bo_unmap(tex_bo);
+   if (do_cpu_rendering(tex_bo, gbm, 32, 32, gbm_bo_get_stride(tex_bo)) < 0)
+      return -1;
 
    EGLImageKHR egl_img;
    egl_img = eglCreateImageKHR(dpy, EGL_NO_CONTEXT,
